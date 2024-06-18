@@ -1,0 +1,76 @@
+name: Web api Build and Deploy on IIS
+
+on:
+  push:
+    branches:
+      - web-application-dotnet
+      - staging
+      - production
+
+env:
+  AWS_REGION: ap-south-1
+  DEFAULT_PROD_BRANCH: production
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+            
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v1.1
+
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v1.0.5
+
+      - name: Restore Packages
+        run: nuget restore web-app/WebApplication1.sln
+
+      - name: Define variables in environment
+        run: |
+          echo "SHORT_SHA=$("${{ github.sha }}".SubString(0, 8))" >> $env:GITHUB_ENV
+          echo "BUILD_NAME=${{ github.ref_name }}-$("${{ github.sha }}".SubString(0, 8))" >> $env:GITHUB_ENV
+          echo "APP_ENVIRONMENT=$(if ("${{ github.ref_name }}" -eq "${{env.DEFAULT_PROD_BRANCH}}") {"prod"} else {"staging"})" >> $env:GITHUB_ENV
+          
+      - name: Add line to beginning of file
+        run: |
+           $filePath = "web-app\deployment\${{ env.APP_ENVIRONMENT }}\download_from_s3.ps1"
+           $lineToAdd = '$key = "build/web/${{ env.APP_ENVIRONMENT }}/${{ env.BUILD_NAME }}/build.zip"'
+           $content = Get-Content $filePath
+           $content = $lineToAdd + "`r`n" + ($content -join "`r`n")
+           $content | Set-Content $filePath -Encoding UTF8
+
+      - name: Display file content
+        run: Get-Content "web-app\deployment\${{ env.APP_ENVIRONMENT }}\download_from_s3.ps1"
+
+      - name: Build app for release
+        run: |
+          msbuild web-app\WebApplication1.csproj -t:rebuild -p:PublishUrl="PublishOutput\MvcApp" -p:DeployOnBuild=true -p:Configuration=Release 
+          New-Item -Path web-app\build -ItemType Directory -Force
+          Copy-Item -Path web-app\obj\Release\Package\PackageTmp\* -Destination web-app\build\ -Recurse
+          Copy-Item -Path web-app\deployment\${{ env.APP_ENVIRONMENT }}\* -Destination webapp\build\ -Recurse
+      
+      - name: Zip build artifacts
+        run: |
+          Compress-Archive -Path web-app\build\ -DestinationPath build.zip -Force
+          dir
+          
+      - name: Upload build artifacts to S3
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: "${{ env.AWS_REGION }}"
+      - run: aws s3 cp build.zip s3://webapp-artifacts-bucket/build/web/${{ env.APP_ENVIRONMENT }}/${{ env.BUILD_NAME }}/ 
+
+      - name: Deploy to AWS CodeDeploy
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: "${{ env.AWS_REGION }}"
+
+      - name: Create deployment
+        run: |
+           aws deploy create-deployment --application-name ticket99-${{ env.APP_ENVIRONMENT }}-codedeploy-application --deployment-group-name ticket99-${{ env.APP_ENVIRONMENT }}-deployment-group --s3-location bucket=ticket99-artifacts-bucket,bundleType=zip,key=build/web/${{ env.APP_ENVIRONMENT }}/${{ env.BUILD_NAME }}/build.zip --file-exists-behavior OVERWRITE
