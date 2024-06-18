@@ -48,8 +48,8 @@ jobs:
         run: |
           msbuild web-app\WebApplication1.csproj -t:rebuild -p:PublishUrl="PublishOutput\MvcApp" -p:DeployOnBuild=true -p:Configuration=Release 
           New-Item -Path web-app\build -ItemType Directory -Force
-          Copy-Item -Path web-app\obj\Release\Package\PackageTmp\* -Destination web-app\build\ -Recurse
-          Copy-Item -Path web-app\deployment\${{ env.APP_ENVIRONMENT }}\* -Destination webapp\build\ -Recurse
+          # Copy-Item -Path web-app\obj\Release\Package\PackageTmp\* -Destination web-app\build\ -Recurse
+          Copy-Item -Path web-app\deployment\${{ env.APP_ENVIRONMENT }}\* -Destination web-app\build\ -Recurse
       
       - name: Zip build artifacts
         run: |
@@ -73,4 +73,4 @@ jobs:
 
       - name: Create deployment
         run: |
-           aws deploy create-deployment --application-name ticket99-${{ env.APP_ENVIRONMENT }}-codedeploy-application --deployment-group-name ticket99-${{ env.APP_ENVIRONMENT }}-deployment-group --s3-location bucket=ticket99-artifacts-bucket,bundleType=zip,key=build/web/${{ env.APP_ENVIRONMENT }}/${{ env.BUILD_NAME }}/build.zip --file-exists-behavior OVERWRITE
+           aws deploy create-deployment --application-name webapp-${{ env.APP_ENVIRONMENT }}-codedeploy-application --deployment-group-name webapp-${{ env.APP_ENVIRONMENT }}-deployment-group --s3-location bucket=webapp-artifacts-bucket,bundleType=zip,key=build/web/${{ env.APP_ENVIRONMENT }}/${{ env.BUILD_NAME }}/build.zip --file-exists-behavior OVERWRITE
