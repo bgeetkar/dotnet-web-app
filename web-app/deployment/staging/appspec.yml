@@ -1,0 +1,11 @@
+version: 0.0
+os: windows
+files:
+  - source: /
+    destination: C:\inetpub\projects\staging\web-application-automaction\build
+hooks:
+  BeforeInstall:
+    - location: \download_from_s3.ps1
+      timeout: 900
+    - location: \before-install.bat
+      timeout: 900
